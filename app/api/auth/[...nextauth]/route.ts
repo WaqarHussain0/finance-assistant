@@ -1,69 +1,46 @@
-import NextAuth from "next-auth";
+// app/api/auth/[...nextauth]/route.ts
+import NextAuth, { type User } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
-import { supabase } from "../../../../utils/supabaseClient";
-import { TABLE_NAMES } from "../../../../constant/tables.constant";
+import jwt, { JwtPayload } from "jsonwebtoken";
 import { PAGE_LINK } from "../../../../constant/page-link.constant";
 
-// Check for required environment variables
-if (!process.env.NEXTAUTH_SECRET) {
-  console.warn(
-    "NEXTAUTH_SECRET is not set. Please check your .env.local file."
-  );
-}
-
-if (!process.env.NEXTAUTH_URL) {
-  console.warn("NEXTAUTH_URL is not set. Please check your .env.local file.");
+interface SupabaseJWT extends JwtPayload {
+  email?: string;
+  sub?: string;
 }
 
 const handler = NextAuth({
   providers: [
     CredentialsProvider({
-      name: "credentials",
+      name: "Supabase",
       credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
+        access_token: { label: "Access Token", type: "text" },
       },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          return null;
-        }
+      async authorize(credentials): Promise<User | null> {
+        if (!credentials?.access_token) return null;
 
         try {
-          const { data: user, error } = await supabase
-            .from(TABLE_NAMES.users)
-            .select("id, email, name, password")
-            .eq("email", credentials.email)
-            .single();
+          const decoded = jwt.verify(
+            credentials.access_token,
+            process.env.SUPABASE_JWT_SECRET!
+          ) as SupabaseJWT;
 
-          if (error || !user) {
-            return null;
-          }
+          if (!decoded.sub || !decoded.email) return null;
 
-          const isPasswordValid = await bcrypt.compare(
-            credentials.password,
-            user.password
-          );
-
-          if (!isPasswordValid) {
-            return null;
-          }
-
+          // Return object that matches NextAuth's User type
           return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
+            id: decoded.sub,
+            email: decoded.email,
+            name: "", // Optional but keeps TS happy
           };
-        } catch (error) {
-          console.error("Auth error:", error);
+        } catch (err) {
+          console.error("JWT verification failed", err);
           return null;
         }
       },
     }),
   ],
-  session: {
-    strategy: "jwt",
-  },
+  session: { strategy: "jwt" },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
@@ -74,10 +51,10 @@ const handler = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      if (token) {
+      if (session.user) {
         session.user.id = token.id as string;
         session.user.email = token.email as string;
-        session.user.name = token.name as string;
+        session.user.name = token.name;
       }
       return session;
     },

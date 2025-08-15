@@ -14,5 +14,11 @@ export default withAuth(
 );
 
 export const config = {
-  matcher: ["/budget", "/categories", "/insights", "/transaction"],
+  matcher: [
+    "/budget",
+    "/categories",
+    "/insights",
+    "/transaction",
+    "/dashboard",
+  ],
 };
